@@ -26,7 +26,7 @@ http.createServer((req, res) => {
 
 // --- CONFIGURATION ---
 
-const HOSTINGER_WEBHOOK_URL = 'https://YOURDOMAIN.com/whatsapp-webhook.php'; // <-- Replace with your domain
+const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // <-- Replace with your domain
 
 const SECRET_TOKEN = 'MY_SECURE_TOKEN_123'; 
 
