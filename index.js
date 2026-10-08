@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const http = require('http');
 
@@ -6,6 +6,7 @@ const SECRET_TOKEN = 'MY_SECURE_TOKEN_123';
 const GROUP_JID = process.env.GROUP_JID;
 let globalSock = null;
 
+// --- DUMMY WEB SERVER FOR RENDER ---
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/send') {
@@ -41,12 +42,15 @@ http.createServer((req, res) => {
 });
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    // Using fresh folder name 'auth_info_v2' to purge ghost sessions
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
     
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        logger: pino({ level: 'silent' })
+        logger: pino({ level: 'silent' }),
+        // Added Browser signature so WhatsApp accepts the connection
+        browser: Browsers.macOS('Desktop')
     });
 
     globalSock = sock;
@@ -61,15 +65,17 @@ async function startBot() {
             if (phoneNumber) {
                 try {
                     const code = await sock.requestPairingCode(phoneNumber);
-                    console.log(`\n🔑 PAIRING CODE: ${code}\n`);
-                } catch (err) {}
+                    console.log(`\n=================================\n🔑 NEW PAIRING CODE: ${code}\n=================================\n`);
+                } catch (err) {
+                    console.error("Failed to request pairing code:", err.message);
+                }
             }
         }
         
         if (connection === 'open') {
             console.log('✅ WhatsApp Bot Connected!');
             
-            // Wait 3 seconds, then fetch and print all groups
+            // Print Group IDs 3 seconds after connecting
             setTimeout(async () => {
                 try {
                     const groups = await sock.groupFetchAllParticipating();
