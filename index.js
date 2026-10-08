@@ -1,10 +1,8 @@
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 const pino = require('pino');
-const http = require('http'); // <-- Added HTTP module
+const http = require('http');
 
-// --- DUMMY WEB SERVER FOR RENDER ---
-// Render requires the app to listen to a web port, or it will fail the deployment.
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200);
@@ -14,7 +12,7 @@ http.createServer((req, res) => {
 });
 
 // --- CONFIGURATION ---
-const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // <-- Put your domain here
+const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // <-- Replace with your domain
 const SECRET_TOKEN = 'MY_SECURE_TOKEN_123'; 
 
 async function startBot() {
@@ -26,22 +24,26 @@ async function startBot() {
         logger: pino({ level: 'silent' })
     });
 
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, qr } = update;
+        
+        // Baileys recommended method: Request pairing code only when the QR event fires
+        if (qr && !sock.authState.creds.registered) {
             const phoneNumber = process.env.BOT_NUMBER;
             if (!phoneNumber) {
                 console.error("❌ Add your BOT_NUMBER in the environment variables!");
                 return;
             }
-            const code = await sock.requestPairingCode(phoneNumber);
-            console.log(`\n=================================\n🔑 PAIRING CODE: ${code}\n=================================\n`);
-        }, 3000);
-    }
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log(`\n=================================\n🔑 PAIRING CODE: ${code}\n=================================\n`);
+            } catch (err) {
+                console.error("❌ Failed to request pairing code:", err.message);
+            }
+        }
 
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection } = update;
         if (connection === 'open') console.log('✅ WhatsApp Bot Connected to Server!');
         else if (connection === 'close') startBot();
     });
