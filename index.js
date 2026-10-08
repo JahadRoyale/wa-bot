@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const http = require('http');
 
@@ -6,7 +6,6 @@ const SECRET_TOKEN = 'MY_SECURE_TOKEN_123';
 const GROUP_JID = process.env.GROUP_JID;
 let globalSock = null;
 
-// --- DUMMY WEB SERVER FOR RENDER ---
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/send') {
@@ -42,15 +41,13 @@ http.createServer((req, res) => {
 });
 
 async function startBot() {
-    // Using fresh folder name 'auth_info_v2' to purge ghost sessions
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
+    // 🔴 CHANGED TO V3 TO NUKE CORRUPTED DATA 🔴
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v3');
     
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        logger: pino({ level: 'silent' }),
-        // Added Browser signature so WhatsApp accepts the connection
-        browser: Browsers.macOS('Desktop')
+        logger: pino({ level: 'silent' })
     });
 
     globalSock = sock;
@@ -65,17 +62,13 @@ async function startBot() {
             if (phoneNumber) {
                 try {
                     const code = await sock.requestPairingCode(phoneNumber);
-                    console.log(`\n=================================\n🔑 NEW PAIRING CODE: ${code}\n=================================\n`);
-                } catch (err) {
-                    console.error("Failed to request pairing code:", err.message);
-                }
+                    console.log(`\n=================================\n🔑 PAIRING CODE: ${code}\n=================================\n`);
+                } catch (err) {}
             }
         }
         
         if (connection === 'open') {
             console.log('✅ WhatsApp Bot Connected!');
-            
-            // Print Group IDs 3 seconds after connecting
             setTimeout(async () => {
                 try {
                     const groups = await sock.groupFetchAllParticipating();
@@ -84,9 +77,7 @@ async function startBot() {
                         console.log(`Name: "${groups[id].subject}" -> GROUP_JID: ${id}`);
                     }
                     console.log('===================================\n');
-                } catch (e) {
-                    console.log('Could not fetch groups.');
-                }
+                } catch (e) {}
             }, 3000);
         }
         else if (connection === 'close') startBot();
