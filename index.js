@@ -1,9 +1,20 @@
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 const pino = require('pino');
+const http = require('http'); // <-- Added HTTP module
+
+// --- DUMMY WEB SERVER FOR RENDER ---
+// Render requires the app to listen to a web port, or it will fail the deployment.
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('WhatsApp Bot is running securely in the background!');
+}).listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Dummy web server listening on port ${PORT}`);
+});
 
 // --- CONFIGURATION ---
-const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // Edit this
+const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // <-- Put your domain here
 const SECRET_TOKEN = 'MY_SECURE_TOKEN_123'; 
 
 async function startBot() {
@@ -11,11 +22,10 @@ async function startBot() {
     
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // Disabling QR to use pairing code
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' })
     });
 
-    // Auto-generate pairing code for headless cloud servers
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             const phoneNumber = process.env.BOT_NUMBER;
@@ -33,14 +43,13 @@ async function startBot() {
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
         if (connection === 'open') console.log('✅ WhatsApp Bot Connected to Server!');
-        else if (connection === 'close') startBot(); // Auto-reconnect
+        else if (connection === 'close') startBot();
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         const msg = messages[0];
         
-        // Ignore status updates and own messages
         if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
 
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
