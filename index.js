@@ -1,87 +1,155 @@
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+
+const axios = require('axios');
+
 const pino = require('pino');
+
 const http = require('http');
 
-const SECRET_TOKEN = 'MY_SECURE_TOKEN_123';
-const GROUP_JID = process.env.GROUP_JID;
-let globalSock = null;
+
 
 const PORT = process.env.PORT || 3000;
+
 http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/send') {
-        let body = '';
-        req.on('data', chunk => { body += chunk.toString(); });
-        req.on('end', async () => {
-            try {
-                const data = JSON.parse(body);
-                if (data.secret !== SECRET_TOKEN) {
-                    res.writeHead(403);
-                    return res.end('Unauthorized');
-                }
-                
-                if (globalSock && GROUP_JID && data.message) {
-                    await globalSock.sendMessage(GROUP_JID, { text: data.message });
-                    res.writeHead(200);
-                    res.end('Sent to WhatsApp');
-                } else {
-                    res.writeHead(500);
-                    res.end('Bot not ready or GROUP_JID missing');
-                }
-            } catch (e) {
-                res.writeHead(400);
-                res.end('Invalid JSON');
-            }
-        });
-    } else {
-        res.writeHead(200);
-        res.end('WhatsApp Bot is running!');
-    }
+
+    res.writeHead(200);
+
+    res.end('WhatsApp Bot is running securely in the background!');
+
 }).listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 API listening on port ${PORT}`);
+
+    console.log(`🌐 Dummy web server listening on port ${PORT}`);
+
 });
 
+
+
+// --- CONFIGURATION ---
+
+const HOSTINGER_WEBHOOK_URL = 'https://YOURDOMAIN.com/whatsapp-webhook.php'; // <-- Replace with your domain
+
+const SECRET_TOKEN = 'MY_SECURE_TOKEN_123'; 
+
+
+
 async function startBot() {
-    // 🔴 CHANGED TO V3 TO NUKE CORRUPTED DATA 🔴
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v3');
+
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+
     
+
     const sock = makeWASocket({
+
         auth: state,
+
         printQRInTerminal: false,
+
         logger: pino({ level: 'silent' })
+
     });
 
-    globalSock = sock;
+
 
     sock.ev.on('creds.update', saveCreds);
 
+
+
     sock.ev.on('connection.update', async (update) => {
+
         const { connection, qr } = update;
+
         
+
+        // Baileys recommended method: Request pairing code only when the QR event fires
+
         if (qr && !sock.authState.creds.registered) {
+
             const phoneNumber = process.env.BOT_NUMBER;
-            if (phoneNumber) {
-                try {
-                    const code = await sock.requestPairingCode(phoneNumber);
-                    console.log(`\n=================================\n🔑 PAIRING CODE: ${code}\n=================================\n`);
-                } catch (err) {}
+
+            if (!phoneNumber) {
+
+                console.error("❌ Add your BOT_NUMBER in the environment variables!");
+
+                return;
+
             }
+
+            try {
+
+                const code = await sock.requestPairingCode(phoneNumber);
+
+                console.log(`\n=================================\n🔑 PAIRING CODE: ${code}\n=================================\n`);
+
+            } catch (err) {
+
+                console.error("❌ Failed to request pairing code:", err.message);
+
+            }
+
         }
-        
-        if (connection === 'open') {
-            console.log('✅ WhatsApp Bot Connected!');
-            setTimeout(async () => {
-                try {
-                    const groups = await sock.groupFetchAllParticipating();
-                    console.log('\n=== 📌 YOUR WHATSAPP GROUPS ===');
-                    for (const id in groups) {
-                        console.log(`Name: "${groups[id].subject}" -> GROUP_JID: ${id}`);
-                    }
-                    console.log('===================================\n');
-                } catch (e) {}
-            }, 3000);
-        }
+
+
+
+        if (connection === 'open') console.log('✅ WhatsApp Bot Connected to Server!');
+
         else if (connection === 'close') startBot();
+
     });
+
+
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+
+        if (type !== 'notify') return;
+
+        const msg = messages[0];
+
+        
+
+        if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
+
+
+
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+        const senderName = msg.pushName || 'Mod';
+
+
+
+        if (text.toLowerCase().startsWith('cancel')) {
+
+            try {
+
+                const response = await axios.post(HOSTINGER_WEBHOOK_URL, 
+
+                    { message: text, sender: senderName },
+
+                    { headers: { 'X-Bot-Token': SECRET_TOKEN } }
+
+                );
+
+
+
+                if (response.data && response.data.reply) {
+
+                    await sock.sendMessage(msg.key.remoteJid, { text: response.data.reply }, { quoted: msg });
+
+                }
+
+            } catch (err) {
+
+                console.log('Webhook error:', err.message);
+
+                await sock.sendMessage(msg.key.remoteJid, { text: '⚠️ Error reaching Hostinger server.' });
+
+            }
+
+        }
+
+    });
+
 }
 
-startBot();
+
+
+startBot(); 
