@@ -3,10 +3,9 @@ const pino = require('pino');
 const http = require('http');
 
 const SECRET_TOKEN = 'MY_SECURE_TOKEN_123';
-const GROUP_JID = process.env.GROUP_JID; // We will add this in Render later
+const GROUP_JID = process.env.GROUP_JID;
 let globalSock = null;
 
-// --- API TO RECEIVE COMMANDS FROM HOSTINGER ---
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/send') {
@@ -26,7 +25,7 @@ http.createServer((req, res) => {
                     res.end('Sent to WhatsApp');
                 } else {
                     res.writeHead(500);
-                    res.end('Bot not ready or GROUP_JID missing in Render Env Vars');
+                    res.end('Bot not ready or GROUP_JID missing');
                 }
             } catch (e) {
                 res.writeHead(400);
@@ -50,7 +49,7 @@ async function startBot() {
         logger: pino({ level: 'silent' })
     });
 
-    globalSock = sock; // Share socket with the HTTP server
+    globalSock = sock;
 
     sock.ev.on('creds.update', saveCreds);
 
@@ -66,18 +65,25 @@ async function startBot() {
                 } catch (err) {}
             }
         }
-        if (connection === 'open') console.log('✅ WhatsApp Bot Connected!');
-        else if (connection === 'close') startBot();
-    });
-
-    // Helper: Logs your Group ID whenever someone types in the WhatsApp Group
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-        const msg = messages[0];
         
-        if (msg.key.remoteJid.endsWith('@g.us')) {
-            console.log(`\n📌 SAVE THIS GROUP JID: ${msg.key.remoteJid}`);
+        if (connection === 'open') {
+            console.log('✅ WhatsApp Bot Connected!');
+            
+            // Wait 3 seconds, then fetch and print all groups
+            setTimeout(async () => {
+                try {
+                    const groups = await sock.groupFetchAllParticipating();
+                    console.log('\n=== 📌 YOUR WHATSAPP GROUPS ===');
+                    for (const id in groups) {
+                        console.log(`Name: "${groups[id].subject}" -> GROUP_JID: ${id}`);
+                    }
+                    console.log('===================================\n');
+                } catch (e) {
+                    console.log('Could not fetch groups.');
+                }
+            }, 3000);
         }
+        else if (connection === 'close') startBot();
     });
 }
 
