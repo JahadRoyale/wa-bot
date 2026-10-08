@@ -3,7 +3,7 @@ const axios = require('axios');
 const pino = require('pino');
 
 // --- CONFIGURATION ---
-const HOSTINGER_WEBHOOK_URL = 'https://YOURDOMAIN.com/whatsapp-webhook.php'; // Edit this
+const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // Edit this
 const SECRET_TOKEN = 'MY_SECURE_TOKEN_123'; 
 
 async function startBot() {
