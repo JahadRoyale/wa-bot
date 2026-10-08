@@ -1,19 +1,45 @@
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
-const axios = require('axios');
 const pino = require('pino');
 const http = require('http');
 
+const SECRET_TOKEN = 'MY_SECURE_TOKEN_123';
+const GROUP_JID = process.env.GROUP_JID; // We will add this in Render later
+let globalSock = null;
+
+// --- API TO RECEIVE COMMANDS FROM HOSTINGER ---
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('WhatsApp Bot is running securely in the background!');
+    if (req.method === 'POST' && req.url === '/send') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const data = JSON.parse(body);
+                if (data.secret !== SECRET_TOKEN) {
+                    res.writeHead(403);
+                    return res.end('Unauthorized');
+                }
+                
+                if (globalSock && GROUP_JID && data.message) {
+                    await globalSock.sendMessage(GROUP_JID, { text: data.message });
+                    res.writeHead(200);
+                    res.end('Sent to WhatsApp');
+                } else {
+                    res.writeHead(500);
+                    res.end('Bot not ready or GROUP_JID missing in Render Env Vars');
+                }
+            } catch (e) {
+                res.writeHead(400);
+                res.end('Invalid JSON');
+            }
+        });
+    } else {
+        res.writeHead(200);
+        res.end('WhatsApp Bot is running!');
+    }
 }).listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 Dummy web server listening on port ${PORT}`);
+    console.log(`🌐 API listening on port ${PORT}`);
 });
-
-// --- CONFIGURATION ---
-const HOSTINGER_WEBHOOK_URL = 'https://cloutronism.shop/whatsapp-webhook.php'; // <-- Replace with your domain
-const SECRET_TOKEN = 'MY_SECURE_TOKEN_123'; 
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
@@ -24,53 +50,33 @@ async function startBot() {
         logger: pino({ level: 'silent' })
     });
 
+    globalSock = sock; // Share socket with the HTTP server
+
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, qr } = update;
         
-        // Baileys recommended method: Request pairing code only when the QR event fires
         if (qr && !sock.authState.creds.registered) {
             const phoneNumber = process.env.BOT_NUMBER;
-            if (!phoneNumber) {
-                console.error("❌ Add your BOT_NUMBER in the environment variables!");
-                return;
-            }
-            try {
-                const code = await sock.requestPairingCode(phoneNumber);
-                console.log(`\n=================================\n🔑 PAIRING CODE: ${code}\n=================================\n`);
-            } catch (err) {
-                console.error("❌ Failed to request pairing code:", err.message);
+            if (phoneNumber) {
+                try {
+                    const code = await sock.requestPairingCode(phoneNumber);
+                    console.log(`\n🔑 PAIRING CODE: ${code}\n`);
+                } catch (err) {}
             }
         }
-
-        if (connection === 'open') console.log('✅ WhatsApp Bot Connected to Server!');
+        if (connection === 'open') console.log('✅ WhatsApp Bot Connected!');
         else if (connection === 'close') startBot();
     });
 
+    // Helper: Logs your Group ID whenever someone types in the WhatsApp Group
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         const msg = messages[0];
         
-        if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
-
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-        const senderName = msg.pushName || 'Mod';
-
-        if (text.toLowerCase().startsWith('cancel')) {
-            try {
-                const response = await axios.post(HOSTINGER_WEBHOOK_URL, 
-                    { message: text, sender: senderName },
-                    { headers: { 'X-Bot-Token': SECRET_TOKEN } }
-                );
-
-                if (response.data && response.data.reply) {
-                    await sock.sendMessage(msg.key.remoteJid, { text: response.data.reply }, { quoted: msg });
-                }
-            } catch (err) {
-                console.log('Webhook error:', err.message);
-                await sock.sendMessage(msg.key.remoteJid, { text: '⚠️ Error reaching Hostinger server.' });
-            }
+        if (msg.key.remoteJid.endsWith('@g.us')) {
+            console.log(`\n📌 SAVE THIS GROUP JID: ${msg.key.remoteJid}`);
         }
     });
 }
